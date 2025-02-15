@@ -13,18 +13,22 @@ from threading import Event
 load_dotenv()
 
 ### Set variables here ###
-links_file = "output.txt"
-session_cookies = os.getenv('SESSION_COOKIES')
-download_directory = "ResourceDownloads"
-output_file = "output.txt"
-processed_file = "processed_output.txt"
-log_download_path = "download.log"
-log_skip_path = "skip.log"
+links_file = os.getenv("LINKS_FILE", "output.txt")
+session_cookies = os.getenv("SESSION_COOKIES")
+download_directory = os.getenv("DOWNLOAD_DIRECTORY", "ResourceDownloads")
+output_file = os.getenv("OUTPUT_FILE", "output.txt")
+processed_file = os.getenv("PROCESSED_FILE", "processed_output.txt")
+log_download_path = os.getenv("LOG_DOWNLOAD_PATH", "download.log")
+log_skip_path = os.getenv("LOG_SKIP_PATH", "skip.log")
+max_threads = int(os.getenv("MAX_THREADS", 4))  # Default to 4 threads if not specified
 ### END - Set variables here ###
 
 # Constants
-skyrim_game_id = "1704"
-nexus_download_url = "https://www.nexusmods.com/Core/Libs/Common/Managers/Downloads?GenerateDownloadUrl"
+skyrim_game_id = os.getenv("SKYRIM_GAME_ID", "1704")
+nexus_download_url = os.getenv(
+    "NEXUS_DOWNLOAD_URL",
+    "https://www.nexusmods.com/Core/Libs/Common/Managers/Downloads?GenerateDownloadUrl",
+)
 
 # Shared dictionary to track download statuses
 download_status = {}
@@ -190,8 +194,6 @@ if __name__ == "__main__":
     # Initialize all links with a default status
     for link in links:
         download_status[link] = {"status": "Pending", "percentage": 0, "speed": 0}
-
-    max_threads = 4
 
     with ThreadPoolExecutor(max_threads) as executor:
         futures = [executor.submit(process_link, link) for link in links]
