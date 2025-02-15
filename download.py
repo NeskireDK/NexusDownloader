@@ -12,7 +12,7 @@ from threading import Event
 # Load the .env file
 load_dotenv()
 
-### Set variables here ###
+### Load env variables here ###
 links_file = os.getenv("LINKS_FILE", "output.txt")
 session_cookies = os.getenv("SESSION_COOKIES")
 download_directory = os.getenv("DOWNLOAD_DIRECTORY", "ResourceDownloads")
@@ -21,14 +21,13 @@ processed_file = os.getenv("PROCESSED_FILE", "processed_output.txt")
 log_download_path = os.getenv("LOG_DOWNLOAD_PATH", "download.log")
 log_skip_path = os.getenv("LOG_SKIP_PATH", "skip.log")
 max_threads = int(os.getenv("MAX_THREADS", 4))  # Default to 4 threads if not specified
-### END - Set variables here ###
 
-# Constants
-skyrim_game_id = os.getenv("SKYRIM_GAME_ID", "1704")
+game_id = os.getenv("GAME_ID", "1704")
 nexus_download_url = os.getenv(
     "NEXUS_DOWNLOAD_URL",
     "https://www.nexusmods.com/Core/Libs/Common/Managers/Downloads?GenerateDownloadUrl",
 )
+### END - Load env variables here ###
 
 # Shared dictionary to track download statuses
 download_status = {}
@@ -56,7 +55,7 @@ def extract_ids_from_url(url):
     match = re.search(r"file_id=(\d+)", url)
     if match:
         file_id = match.group(1)
-        game_id = skyrim_game_id
+        game_id = game_id
         return file_id, game_id
     else:
         return None, None
