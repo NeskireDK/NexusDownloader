@@ -1,6 +1,7 @@
 # NexusDownloader
 ai assisted python script for downloading from Nexusmods.com from a simple txt file
 
+
 ## setup environment file
 Create an .env file with SESSION_COOKIES set. 
 Login to nexusmods and open developer tools (F12), go to network, check for request with session cookie. Copy pasta profit!11
@@ -19,3 +20,9 @@ GAME_ID=1704
 NEXUS_DOWNLOAD_URL=https://www.nexusmods.com/Core/Libs/Common/Managers/Downloads?GenerateDownloadUrl
 
 ```
+
+## Variable explaination
+- OUTPUT_FILE is the actual list of things you want downloaded, direct links to the mod, seperated by newline.
+
+### Generating an output file from a wabbajack list: 
+Using this tool, point it to a local wabbjack list https://github.com/M1n-74316D65/Wabbajack-fast-downloader 
