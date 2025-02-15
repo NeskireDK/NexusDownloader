@@ -1,6 +1,5 @@
 import requests
 import time
-import random
 import os
 import re
 import sys
@@ -8,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 import signal
 from threading import Event
+import shutil  # For moving files
 
 # Load the .env file
 load_dotenv()
@@ -16,6 +16,7 @@ load_dotenv()
 links_file = os.getenv("LINKS_FILE", "output.txt")
 session_cookies = os.getenv("SESSION_COOKIES")
 download_directory = os.getenv("DOWNLOAD_DIRECTORY", "ResourceDownloads")
+temp_directory = os.getenv("TEMP_DIRECTORY", "TempDownloads")  # Temporary directory for in-progress downloads
 output_file = os.getenv("OUTPUT_FILE", "output.txt")
 processed_file = os.getenv("PROCESSED_FILE", "processed_output.txt")
 log_download_path = os.getenv("LOG_DOWNLOAD_PATH", "download.log")
@@ -55,8 +56,8 @@ def extract_ids_from_url(url):
     match = re.search(r"file_id=(\d+)", url)
     if match:
         file_id = match.group(1)
-        game_id = game_id
-        return file_id, game_id
+        game_id_out = game_id
+        return file_id, game_id_out
     else:
         return None, None
 
@@ -74,7 +75,10 @@ def make_post_request(referer_url, file_id, game_id):
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         "Origin": "https://www.nexusmods.com",
         "Referer": referer_url,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        ),
         "X-Requested-With": "XMLHttpRequest",
         "Cookie": session_cookies,
     }
@@ -93,16 +97,20 @@ def make_post_request(referer_url, file_id, game_id):
             pass
     return None
 
-# Function to download a file and update progress
+# Updated function: Download a file and move it from temp folder to final folder.
 def download_file(download_url, referer_url, link):
     global download_status
 
     try:
+        # Ensure both directories exist.
         os.makedirs(download_directory, exist_ok=True)
-        file_name = download_url.split("/")[-1].split("?")[0]
-        file_path = os.path.join(download_directory, file_name)
+        os.makedirs(temp_directory, exist_ok=True)
 
-        if os.path.exists(file_path):
+        file_name = download_url.split("/")[-1].split("?")[0]
+        temp_file_path = os.path.join(temp_directory, file_name)  # File path in temp directory
+        final_file_path = os.path.join(download_directory, file_name)  # File path in final directory
+
+        if os.path.exists(final_file_path):
             with open(log_skip_path, "a") as skip_log:
                 skip_log.write(f"Skipped: {file_name} (already exists) - URL: {referer_url}\n")
             download_status[link] = {"status": "Skipped", "percentage": 100, "speed": 0}
@@ -115,26 +123,29 @@ def download_file(download_url, referer_url, link):
             downloaded_size = 0
             start_time = time.time()
 
-            with open(file_path, 'wb') as file:
+            # Write to temp directory while downloading.
+            with open(temp_file_path, 'wb') as temp_file:
                 for chunk in response.iter_content(chunk_size=1024):
                     if abort_requested.is_set():
-                        download_status[link] = {"status": f"Aborted", "percentage": 0, "speed": 0}
-                        return  # Stop downloading immediately if abort is requested
+                        download_status[link] = {"status": f"Aborted", "percentage": downloaded_size / total_size * 100}
+                        return
 
-                    if chunk:
-                        file.write(chunk)
-                        downloaded_size += len(chunk)
+                    temp_file.write(chunk)
+                    downloaded_size += len(chunk)
 
-                        # Update progress and speed
-                        elapsed_time = time.time() - start_time
-                        percentage = (downloaded_size / total_size) * 100 if total_size > 0 else 0
-                        speed = (downloaded_size / elapsed_time) / 1024 if elapsed_time > 0 else 0
+                    # Update progress and speed.
+                    elapsed_time = time.time() - start_time
+                    percentage = (downloaded_size / total_size) * 100 if total_size > 0 else 0
+                    speed = (downloaded_size / elapsed_time) / 1024 if elapsed_time > 0 else 0
 
-                        download_status[link] = {
-                            "status": f"Downloading...",
-                            "percentage": percentage,
-                            "speed": speed,
-                        }
+                    download_status[link] = {
+                        "status": f"Downloading...",
+                        "percentage": percentage,
+                        "speed": speed,
+                    }
+
+            # Move the completed file from temp directory to final directory.
+            shutil.move(temp_file_path, final_file_path)
 
             with open(log_download_path, "a") as download_log:
                 download_log.write(f"{referer_url}\n")
@@ -145,19 +156,22 @@ def download_file(download_url, referer_url, link):
             download_status[link] = {"status": f"Failed (HTTP {response.status_code})", "percentage": 0, "speed": 0}
 
     except Exception as e:
+        # If an error occurs, delete the incomplete temp file (if it exists).
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
         download_status[link] = {"status": f"Error: {str(e)}", "percentage": 0, "speed": 0}
 
-# Function to process a single link
+# Function to process a single link.
 def process_link(link):
     global remaining_files
 
-    # Reset download status before starting
+    # Reset download status before starting.
     download_status[link] = {"status": "Requesting URL...", "percentage": 0, "speed": 0}
 
     referer_url = link
-    file_id, game_id = extract_ids_from_url(referer_url)
-    if file_id and game_id:
-        download_url = make_post_request(referer_url, file_id, game_id)
+    file_id, game_id_out = extract_ids_from_url(referer_url)
+    if file_id and game_id_out:
+        download_url = make_post_request(referer_url, file_id, game_id_out)
         if download_url:
             download_file(download_url, referer_url, link)
     else:
@@ -165,19 +179,20 @@ def process_link(link):
 
     remaining_files -= 1
 
-# Function to render the status lines in the console
+
+# Function to render the status lines in the console.
 def render_console(links):
     global remaining_files
 
-    os.system("cls" if os.name == "nt" else "clear")  # Clear console for clean output
+    os.system("cls" if os.name == "nt" else "clear")  # Clear console for clean output.
 
-    # Calculate total combined speed across all active downloads
+    # Calculate total combined speed across all active downloads.
     total_speed = sum(status.get("speed", 0) for status in download_status.values())
 
-    # Line 1: Remaining files count and combined speed
+    # Line 1: Remaining files count and combined speed.
     print(f"{remaining_files}/{len(links)} remaining | Total Speed: {total_speed:.2f} KB/s")
 
-    # Lines 2–5: Display up to four active downloads with their stats
+    # Lines 2–5: Display up to four active downloads with their stats.
     active_links = [link for link in list(download_status.keys()) if not download_status[link]["status"] in ["Skipped", "Completed"]][:4]
     for link in active_links:
         status_info = download_status.get(link, {})
@@ -186,17 +201,18 @@ def render_console(links):
         speed_text = f"{status_info.get('speed', 0):.2f} KB/s"
         print(f"[{link}] {status_text} | {percentage_text} | {speed_text}")
 
+
 if __name__ == "__main__":
     links = read_links(links_file)
     remaining_files = len(links)
 
-    # Initialize all links with a default status
+    # Initialize all links with a default status.
     for link in links:
         download_status[link] = {"status": "Pending", "percentage": 0, "speed": 0}
 
     with ThreadPoolExecutor(max_threads) as executor:
         futures = [executor.submit(process_link, link) for link in links]
-        
+
         while any(future.running() for future in futures):  
             render_console(links)
             time.sleep(1)
@@ -204,4 +220,3 @@ if __name__ == "__main__":
             # Stop rendering if abort is requested.
             if abort_requested.is_set():
                 break
-        
